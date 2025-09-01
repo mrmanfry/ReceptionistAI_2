@@ -27,6 +27,106 @@ class DatabaseManager:
         )
         logging.info("Pool di connessioni al database creato.")
         
+        # Crea le tabelle se non esistono
+        await self._create_tables_if_not_exist()
+        
+    async def _create_tables_if_not_exist(self):
+        """Crea le tabelle del database se non esistono"""
+        try:
+            async with self.pool.acquire() as connection:
+                # Verifica se la tabella ristoranti esiste
+                table_exists = await connection.fetchval(
+                    """
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'ristoranti'
+                    );
+                    """
+                )
+                
+                if not table_exists:
+                    logging.info("Creazione tabelle del database...")
+                    
+                    # Crea le tabelle
+                    await connection.execute("""
+                        CREATE TABLE ristoranti (
+                            id SERIAL PRIMARY KEY,
+                            nome_ristorante VARCHAR(255) NOT NULL,
+                            numero_twilio VARCHAR(50) UNIQUE NOT NULL,
+                            system_prompt TEXT NOT NULL,
+                            telefono_escalation VARCHAR(50),
+                            orari_apertura TEXT,
+                            indirizzo TEXT,
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    
+                    await connection.execute("""
+                        CREATE TABLE chiamate_log (
+                            id SERIAL PRIMARY KEY,
+                            ristorante_id INTEGER REFERENCES ristoranti(id),
+                            stream_sid VARCHAR(100) NOT NULL,
+                            numero_chiamante VARCHAR(50),
+                            numero_chiamato VARCHAR(50),
+                            durata_chiamata INTEGER,
+                            timestamp_inizio TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                            timestamp_fine TIMESTAMP WITH TIME ZONE,
+                            status VARCHAR(20) DEFAULT 'completed'
+                        );
+                    """)
+                    
+                    await connection.execute("""
+                        CREATE TABLE configurazioni (
+                            id SERIAL PRIMARY KEY,
+                            ristorante_id INTEGER REFERENCES ristoranti(id),
+                            chiave VARCHAR(100) NOT NULL,
+                            valore TEXT NOT NULL,
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                            UNIQUE(ristorante_id, chiave)
+                        );
+                    """)
+                    
+                    # Crea indici
+                    await connection.execute("CREATE INDEX idx_ristoranti_numero_twilio ON ristoranti(numero_twilio);")
+                    await connection.execute("CREATE INDEX idx_chiamate_ristorante_id ON chiamate_log(ristorante_id);")
+                    await connection.execute("CREATE INDEX idx_chiamate_timestamp ON chiamate_log(timestamp_inizio);")
+                    
+                    # Crea trigger per updated_at
+                    await connection.execute("""
+                        CREATE OR REPLACE FUNCTION update_updated_at_column()
+                        RETURNS TRIGGER AS $$
+                        BEGIN
+                            NEW.updated_at = CURRENT_TIMESTAMP;
+                            RETURN NEW;
+                        END;
+                        $$ language 'plpgsql';
+                    """)
+                    
+                    await connection.execute("""
+                        CREATE TRIGGER update_ristoranti_updated_at 
+                            BEFORE UPDATE ON ristoranti 
+                            FOR EACH ROW 
+                            EXECUTE FUNCTION update_updated_at_column();
+                    """)
+                    
+                    # Inserisci dati di esempio
+                    await connection.execute("""
+                        INSERT INTO ristoranti (nome_ristorante, numero_twilio, system_prompt, telefono_escalation, orari_apertura, indirizzo)
+                        VALUES 
+                        ('Trattoria da Mario', '+39021111111', 'Sei un assistente virtuale per la Trattoria da Mario. Rispondi in modo cortese e conciso. Orari: 19:00-23:00, chiuso lunedì.', '+393331111111', '19:00-23:00, chiuso lunedì', 'Via Roma 123, Milano'),
+                        ('Pizzeria da Gino', '+39062222222', 'Sei l''assistente virtuale della Pizzeria da Gino. Sei veloce e informale. Orari: 7 giorni su 7, 18:30-24:00.', '+393332222222', '18:30-24:00, tutti i giorni', 'Via Napoli 456, Roma')
+                        ON CONFLICT (numero_twilio) DO NOTHING;
+                    """)
+                    
+                    logging.info("Tabelle del database create con successo.")
+                else:
+                    logging.info("Tabelle del database già esistenti.")
+                    
+        except Exception as e:
+            logging.error(f"Errore durante la creazione delle tabelle: {e}")
+            # Non bloccare l'avvio dell'applicazione se le tabelle non possono essere create
+        
     async def close(self):
         """Chiude il pool di connessioni"""
         if self.pool:

@@ -15,7 +15,14 @@ from database.db_manager import db_manager
 # --- Configurazione ---
 logging.basicConfig(level=logging.INFO)
 app = FastAPI()
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+# Inizializza il client OpenAI solo se la chiave API è disponibile
+client = None
+if OPENAI_API_KEY and OPENAI_API_KEY.startswith("sk-"):
+    client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+    logging.info("Client OpenAI inizializzato.")
+else:
+    logging.warning("OPENAI_API_KEY non configurata o non valida. Le funzionalità AI non saranno disponibili.")
 
 # Variabili di stato della chiamata
 is_speaking = False
@@ -32,8 +39,12 @@ vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
 @app.on_event("startup")
 async def startup():
     """Inizializza il database all'avvio dell'applicazione"""
-    await db_manager.initialize()
-    logging.info("Applicazione avviata e database inizializzato.")
+    try:
+        await db_manager.initialize()
+        logging.info("Applicazione avviata e database inizializzato.")
+    except Exception as e:
+        logging.error(f"Errore durante l'inizializzazione del database: {e}")
+        logging.warning("L'applicazione continuerà senza database. Le funzionalità multi-tenant non saranno disponibili.")
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -50,6 +61,12 @@ async def process_user_speech(websocket: WebSocket, stream_sid: str, numero_chia
     """
     global audio_buffer
     logging.info("L'utente ha finito di parlare. Processo l'audio...")
+
+    # Verifica se il client OpenAI è inizializzato
+    if client is None:
+        logging.error("Client OpenAI non inizializzato. Impossibile processare l'audio.")
+        audio_buffer.clear()
+        return
 
     try:
         # --- 1. TRASCRIVERE (Speech-to-Text) ---
@@ -73,15 +90,20 @@ async def process_user_speech(websocket: WebSocket, stream_sid: str, numero_chia
 
         # --- 2. PENSARE (LLM) ---
         # Recupera il prompt specifico per il ristorante dal database
-        restaurant_info = await db_manager.get_restaurant_by_phone(numero_chiamato)
-        
-        if not restaurant_info:
-            logging.error(f"Ristorante non trovato per il numero: {numero_chiamato}")
+        try:
+            restaurant_info = await db_manager.get_restaurant_by_phone(numero_chiamato)
+            
+            if not restaurant_info:
+                logging.warning(f"Ristorante non trovato per il numero: {numero_chiamato}")
+                # Fallback a un prompt generico
+                system_prompt = "Sei un assistente virtuale generico per ristoranti. Rispondi in modo cortese e conciso."
+            else:
+                system_prompt = restaurant_info['system_prompt']
+                logging.info(f"Prompt caricato per {restaurant_info['nome_ristorante']} ({numero_chiamato})")
+        except Exception as e:
+            logging.error(f"Errore nel recupero delle informazioni del ristorante: {e}")
             # Fallback a un prompt generico
-            system_prompt = "Sei un assistente virtuale generico. Non ho trovato informazioni specifiche per questo ristorante."
-        else:
-            system_prompt = restaurant_info['system_prompt']
-            logging.info(f"Prompt caricato per {restaurant_info['nome_ristorante']} ({numero_chiamato})")
+            system_prompt = "Sei un assistente virtuale generico per ristoranti. Rispondi in modo cortese e conciso."
         
         response = await client.chat.completions.create(
             model="gpt-4o-mini",

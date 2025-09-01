@@ -29,6 +29,15 @@ steps:
       - '1'
       - '--max-instances'
       - '10'
+      - '--set-env-vars'
+      - 'OPENAI_API_KEY=${_OPENAI_API_KEY},DATABASE_URL=${_DATABASE_URL}'
 
 images:
   - 'gcr.io/$PROJECT_ID/receptionist-ai'
+
+# Sostituzioni per le variabili d'ambiente
+# IMPORTANTE: Sostituisci questi valori con le tue credenziali reali
+# Per deployare: gcloud builds submit --config cloudbuild.yaml . --substitutions=_OPENAI_API_KEY="sk-...",_DATABASE_URL="postgresql://..."
+substitutions:
+  _OPENAI_API_KEY: 'YOUR_OPENAI_API_KEY_HERE'
+  _DATABASE_URL: 'YOUR_DATABASE_URL_HERE'
