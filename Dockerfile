@@ -1,3 +1,5 @@
+# Receptionist AI - Multi-tenant AI Receptionist Service
+# Build timestamp: 2025-09-01 19:00:00
 FROM python:3.11-slim
 
 WORKDIR /app
