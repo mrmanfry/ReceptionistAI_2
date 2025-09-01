@@ -150,19 +150,17 @@ async def process_user_speech(websocket: WebSocket, stream_sid: str, numero_chia
         audio_buffer.clear()
 
 
-@app.websocket("/{path:path}")
-async def websocket_endpoint(websocket: WebSocket, path: str = ""):
+@app.websocket("/ws/{numero_chiamato}")
+async def websocket_endpoint(websocket: WebSocket, numero_chiamato: str):
     global is_speaking, speech_buffer, silence_frames, audio_buffer, current_stream_sid, current_call_id, call_start_time
     
-    # --- NUOVO: ESTRAZIONE NUMERO CHIAMATO ---
-    query_string = websocket.scope.get("query_string", b"").decode()
+    # --- NUOVO: ESTRAZIONE NUMERO CHIAMATO DAL PATH ---
+    # Il numero ora arriva direttamente come argomento della funzione!
+    numero_chiamato = urllib.parse.unquote(numero_chiamato)
     
     # --- AGGIUNGI QUESTA RIGA ---
-    logging.info(f"Query string ricevuta da Twilio: '{query_string}'")
+    logging.info(f"Numero chiamato ricevuto nel path: '{numero_chiamato}'")
     # ---------------------------
-    
-    parsed_query = parse_qs(query_string)
-    numero_chiamato = parsed_query.get("numero_chiamato", [None])[0]
     
     await websocket.accept()
     
