@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <!-- 
+        IMPORTANTE: Sostituisci YOUR_CLOUD_RUN_URL con l'URL del tuo servizio Cloud Run
+        Il parametro ?numero_chiamato={{To}} viene sostituito automaticamente da Twilio
+        con il numero che è stato chiamato
+        -->
+        <Stream url="wss://YOUR_CLOUD_RUN_URL/?numero_chiamato={{To}}" />
+    </Connect>
+</Response>
