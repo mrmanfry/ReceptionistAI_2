@@ -156,6 +156,11 @@ async def websocket_endpoint(websocket: WebSocket, path: str = ""):
     
     # --- NUOVO: ESTRAZIONE NUMERO CHIAMATO ---
     query_string = websocket.scope.get("query_string", b"").decode()
+    
+    # --- AGGIUNGI QUESTA RIGA ---
+    logging.info(f"Query string ricevuta da Twilio: '{query_string}'")
+    # ---------------------------
+    
     parsed_query = parse_qs(query_string)
     numero_chiamato = parsed_query.get("numero_chiamato", [None])[0]
     
